@@ -1,0 +1,91 @@
+name: Build Mi6 KSU Kernel with Droidspaces ZIP
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout kernel source
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y \
+            bc bison build-essential ccache curl flex git kmod \
+            libelf-dev libssl-dev lld llvm clang lz4 pahole \
+            python3 rsync unzip zip zstd \
+            gcc-arm-linux-gnueabi gcc-aarch64-linux-gnu
+
+      - name: Clone Droidspaces repo
+        run: |
+          git clone --depth=1 https://github.com/ravindu644/Droidspaces-OSS.git /tmp/Droidspaces-OSS
+
+      - name: Apply Droidspaces non-GKI patches
+        run: |
+          set -e
+          PATCH_DIR="/tmp/Droidspaces-OSS/Documentation/resources/kernel-patches/non-GKI"
+
+          for p in "$PATCH_DIR"/*.patch; do
+            echo "Checking $p"
+
+            if grep -q "net/netfilter/xt_qtaguid.c" "$p"; then
+              if [ -f "net/netfilter/xt_qtaguid.c" ]; then
+                echo "Applying xt_qtaguid patch: $p"
+                patch -p1 < "$p"
+              else
+                echo "Skipping $p because net/netfilter/xt_qtaguid.c is not present in this kernel tree"
+              fi
+            else
+              echo "Applying $p"
+              patch -p1 < "$p"
+            fi
+          done
+
+      - name: Prepare config
+        run: |
+          mkdir -p out
+          make O=out ARCH=arm64 vendor/xiaomi/mi8998_defconfig vendor/xiaomi/sagit.config droidspaces.config
+
+      - name: Build kernel
+        run: |
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 \
+            CC=clang \
+            LLVM=1 \
+            LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            Image.gz-dtb dtbs
+
+      - name: Clone AnyKernel3
+        run: |
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AnyKernel3
+
+      - name: Prepare flashable zip
+        run: |
+          cp out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
+          cd AnyKernel3
+
+          sed -i 's|kernel.string=.*|kernel.string=Mi6 KSU + Droidspaces Kernel by Abdulsamet|' anykernel.sh
+          sed -i 's|do.devicecheck=.*|do.devicecheck=1|' anykernel.sh
+          sed -i 's|device.name1=.*|device.name1=sagit|' anykernel.sh
+          sed -i '/device.name2=/d' anykernel.sh
+          sed -i '/device.name3=/d' anykernel.sh
+          sed -i '/device.name4=/d' anykernel.sh
+          sed -i 's|BLOCK=.*|BLOCK=boot;|' anykernel.sh
+          sed -i 's|IS_SLOT_DEVICE=.*|IS_SLOT_DEVICE=0;|' anykernel.sh
+
+          zip -r9 ../Mi6-KSU-Droidspaces-Kernel.zip . -x ".git*" "README.md" "*placeholder"
+
+      - name: Upload flashable zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: Mi6-KSU-Droidspaces-Kernel-ZIP
+          path: |
+            Mi6-KSU-Droidspaces-Kernel.zip
+            out/.config
