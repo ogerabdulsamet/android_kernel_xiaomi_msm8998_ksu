@@ -1,4 +1,4 @@
-name: Build Mi6 Kernel with Droidspaces ZIP
+name: Build Mi6 KSU Kernel with Droidspaces ZIP
 
 on:
   workflow_dispatch:
@@ -27,7 +27,6 @@ jobs:
       - name: Apply Droidspaces non-GKI patches
         run: |
           set -e
-
           PATCH_DIR="/tmp/Droidspaces-OSS/Documentation/resources/kernel-patches/non-GKI"
 
           for p in "$PATCH_DIR"/*.patch; do
@@ -40,6 +39,43 @@ jobs:
               else
                 echo "Skipping $p because net/netfilter/xt_qtaguid.c is not present in this kernel tree"
               fi
+
+            elif grep -q "kernel/cgroup/cgroup.c" "$p"; then
+              if [ -f "kernel/cgroup/cgroup.c" ]; then
+                echo "Applying cgroup patch to kernel/cgroup/cgroup.c"
+                patch -p1 < "$p"
+              elif [ -f "kernel/cgroup.c" ]; then
+                echo "Applying legacy cgroup compatibility patch to kernel/cgroup.c"
+                python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("kernel/cgroup.c")
+          text = p.read_text()
+
+          if '%s.%s' in text and 'kernfs_create_link(cgrp->kn, name, kn);' in text:
+              print("Legacy cgroup prefix patch may already be present, skipping")
+              raise SystemExit(0)
+
+          marker = "static int cgroup_add_file(struct cgroup_subsys_state *css, struct cgroup *cgrp,"
+          start = text.find(marker)
+          if start == -1:
+              raise SystemExit("cgroup_add_file function not found in kernel/cgroup.c")
+
+          return_anchor = "\treturn 0;\n}\n"
+          end = text.find(return_anchor, start)
+          if end == -1:
+              raise SystemExit("return anchor not found in cgroup_add_file")
+
+          insert = """\tif (cft->ss && (cgrp->root->flags & CGRP_ROOT_NOPREFIX) && !(cft->flags & CFTYPE_NO_PREFIX)) {\n\t\tsnprintf(name, CGROUP_FILE_NAME_MAX, \"%s.%s\", cft->ss->name, cft->name);\n\t\tkernfs_create_link(cgrp->kn, name, kn);\n\t}\n\n"""
+
+          text = text[:end] + insert + text[end:]
+          p.write_text(text)
+          print("Injected legacy cgroup prefix compatibility block into kernel/cgroup.c")
+          PY
+              else
+                echo "Skipping $p because no compatible cgroup source file was found"
+              fi
+
             else
               echo "Applying $p"
               patch -p1 < "$p"
@@ -72,7 +108,7 @@ jobs:
           cp out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
           cd AnyKernel3
 
-          sed -i 's|kernel.string=.*|kernel.string=Mi6 Droidspaces Kernel by Abdulsamet|' anykernel.sh
+          sed -i 's|kernel.string=.*|kernel.string=Mi6 KSU + Droidspaces Kernel by Abdulsamet|' anykernel.sh
           sed -i 's|do.devicecheck=.*|do.devicecheck=1|' anykernel.sh
           sed -i 's|device.name1=.*|device.name1=sagit|' anykernel.sh
           sed -i '/device.name2=/d' anykernel.sh
@@ -81,12 +117,12 @@ jobs:
           sed -i 's|BLOCK=.*|BLOCK=boot;|' anykernel.sh
           sed -i 's|IS_SLOT_DEVICE=.*|IS_SLOT_DEVICE=0;|' anykernel.sh
 
-          zip -r9 ../Mi6-Droidspaces-Kernel.zip . -x ".git*" "README.md" "*placeholder"
+          zip -r9 ../Mi6-KSU-Droidspaces-Kernel.zip . -x ".git*" "README.md" "*placeholder"
 
       - name: Upload flashable zip
         uses: actions/upload-artifact@v4
         with:
-          name: Mi6-Droidspaces-Kernel-ZIP
+          name: Mi6-KSU-Droidspaces-Kernel-ZIP
           path: |
-            Mi6-Droidspaces-Kernel.zip
+            Mi6-KSU-Droidspaces-Kernel.zip
             out/.config
