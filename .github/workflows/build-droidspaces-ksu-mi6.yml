@@ -21,8 +21,7 @@ jobs:
             gcc-arm-linux-gnueabi gcc-aarch64-linux-gnu
 
       - name: Clone Droidspaces repo
-        run: |
-          git clone --depth=1 https://github.com/ravindu644/Droidspaces-OSS.git /tmp/Droidspaces-OSS
+        run: git clone --depth=1 https://github.com/ravindu644/Droidspaces-OSS.git /tmp/Droidspaces-OSS
 
       - name: Apply Droidspaces non-GKI patches
         run: |
@@ -46,9 +45,9 @@ jobs:
                 patch -p1 < "$p"
               elif [ -f "kernel/cgroup.c" ]; then
                 echo "Applying legacy cgroup compatibility patch to kernel/cgroup.c"
-                python3 - <<'PY'
-from pathlib import Path
 
+                python3 -c '
+from pathlib import Path
 p = Path("kernel/cgroup.c")
 text = p.read_text()
 
@@ -57,7 +56,7 @@ start = text.find(marker)
 if start == -1:
     raise SystemExit("cgroup_add_file function not found in kernel/cgroup.c")
 
-block = '\tif (cft->ss && (cgrp->root->flags & CGRP_ROOT_NOPREFIX) && !(cft->flags & CFTYPE_NO_PREFIX)) {\n\t\tsnprintf(name, CGROUP_FILE_NAME_MAX, "%s.%s", cft->ss->name, cft->name);\n\t\tkernfs_create_link(cgrp->kn, name, kn);\n\t}\n\n'
+block = "\tif (cft->ss && (cgrp->root->flags & CGRP_ROOT_NOPREFIX) && !(cft->flags & CFTYPE_NO_PREFIX)) {\n\t\tsnprintf(name, CGROUP_FILE_NAME_MAX, \"%s.%s\", cft->ss->name, cft->name);\n\t\tkernfs_create_link(cgrp->kn, name, kn);\n\t}\n\n"
 if block in text:
     print("Legacy cgroup prefix patch already present, skipping")
     raise SystemExit(0)
@@ -70,7 +69,7 @@ if end == -1:
 text = text[:end] + block + text[end:]
 p.write_text(text)
 print("Injected legacy cgroup prefix compatibility block into kernel/cgroup.c")
-PY
+'
               else
                 echo "Skipping $p because no compatible cgroup source file was found"
               fi
@@ -99,14 +98,12 @@ PY
             Image.gz-dtb dtbs
 
       - name: Clone AnyKernel3
-        run: |
-          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AnyKernel3
+        run: git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AnyKernel3
 
       - name: Prepare flashable zip
         run: |
           cp out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
           cd AnyKernel3
-
           sed -i 's|kernel.string=.*|kernel.string=Mi6 KSU + Droidspaces Kernel by Abdulsamet|' anykernel.sh
           sed -i 's|do.devicecheck=.*|do.devicecheck=1|' anykernel.sh
           sed -i 's|device.name1=.*|device.name1=sagit|' anykernel.sh
@@ -115,7 +112,6 @@ PY
           sed -i '/device.name4=/d' anykernel.sh
           sed -i 's|BLOCK=.*|BLOCK=boot;|' anykernel.sh
           sed -i 's|IS_SLOT_DEVICE=.*|IS_SLOT_DEVICE=0;|' anykernel.sh
-
           zip -r9 ../Mi6-KSU-Droidspaces-Kernel.zip . -x ".git*" "README.md" "*placeholder"
 
       - name: Upload flashable zip
