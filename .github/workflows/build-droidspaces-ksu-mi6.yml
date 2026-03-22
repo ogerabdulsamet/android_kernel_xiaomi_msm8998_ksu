@@ -47,31 +47,30 @@ jobs:
               elif [ -f "kernel/cgroup.c" ]; then
                 echo "Applying legacy cgroup compatibility patch to kernel/cgroup.c"
                 python3 - <<'PY'
-          from pathlib import Path
+                from pathlib import Path
 
-          p = Path("kernel/cgroup.c")
-          text = p.read_text()
+                p = Path("kernel/cgroup.c")
+                text = p.read_text()
 
-          if '%s.%s' in text and 'kernfs_create_link(cgrp->kn, name, kn);' in text:
-              print("Legacy cgroup prefix patch may already be present, skipping")
-              raise SystemExit(0)
+                marker = "static int cgroup_add_file(struct cgroup_subsys_state *css, struct cgroup *cgrp,"
+                start = text.find(marker)
+                if start == -1:
+                    raise SystemExit("cgroup_add_file function not found in kernel/cgroup.c")
 
-          marker = "static int cgroup_add_file(struct cgroup_subsys_state *css, struct cgroup *cgrp,"
-          start = text.find(marker)
-          if start == -1:
-              raise SystemExit("cgroup_add_file function not found in kernel/cgroup.c")
+                block = '\tif (cft->ss && (cgrp->root->flags & CGRP_ROOT_NOPREFIX) && !(cft->flags & CFTYPE_NO_PREFIX)) {\n\t\tsnprintf(name, CGROUP_FILE_NAME_MAX, "%s.%s", cft->ss->name, cft->name);\n\t\tkernfs_create_link(cgrp->kn, name, kn);\n\t}\n\n'
+                if block in text:
+                    print("Legacy cgroup prefix patch already present, skipping")
+                    raise SystemExit(0)
 
-          return_anchor = "\treturn 0;\n}\n"
-          end = text.find(return_anchor, start)
-          if end == -1:
-              raise SystemExit("return anchor not found in cgroup_add_file")
+                anchor = "\treturn 0;\n}\n"
+                end = text.find(anchor, start)
+                if end == -1:
+                    raise SystemExit("return anchor not found in cgroup_add_file")
 
-          insert = """\tif (cft->ss && (cgrp->root->flags & CGRP_ROOT_NOPREFIX) && !(cft->flags & CFTYPE_NO_PREFIX)) {\n\t\tsnprintf(name, CGROUP_FILE_NAME_MAX, \"%s.%s\", cft->ss->name, cft->name);\n\t\tkernfs_create_link(cgrp->kn, name, kn);\n\t}\n\n"""
-
-          text = text[:end] + insert + text[end:]
-          p.write_text(text)
-          print("Injected legacy cgroup prefix compatibility block into kernel/cgroup.c")
-          PY
+                text = text[:end] + block + text[end:]
+                p.write_text(text)
+                print("Injected legacy cgroup prefix compatibility block into kernel/cgroup.c")
+                PY
               else
                 echo "Skipping $p because no compatible cgroup source file was found"
               fi
@@ -85,7 +84,7 @@ jobs:
       - name: Prepare config
         run: |
           mkdir -p out
-          make O=out ARCH=arm64 vendor/xiaomi/mi8998_defconfig vendor/xiaomi/sagit.config droidspaces.config
+          make O=out ARCH=arm64 sagit_defconfig droidspaces.config ksu.config
 
       - name: Build kernel
         run: |
