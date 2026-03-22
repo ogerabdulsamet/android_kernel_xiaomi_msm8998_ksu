@@ -1,4 +1,4 @@
-name: Build Mi6 KSU Kernel with Droidspaces ZIP
+name: Build Mi6 Kernel with Droidspaces ZIP
 
 on:
   workflow_dispatch:
@@ -27,6 +27,7 @@ jobs:
       - name: Apply Droidspaces non-GKI patches
         run: |
           set -e
+
           PATCH_DIR="/tmp/Droidspaces-OSS/Documentation/resources/kernel-patches/non-GKI"
 
           for p in "$PATCH_DIR"/*.patch; do
@@ -71,7 +72,7 @@ jobs:
           cp out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
           cd AnyKernel3
 
-          sed -i 's|kernel.string=.*|kernel.string=Mi6 KSU + Droidspaces Kernel by Abdulsamet|' anykernel.sh
+          sed -i 's|kernel.string=.*|kernel.string=Mi6 Droidspaces Kernel by Abdulsamet|' anykernel.sh
           sed -i 's|do.devicecheck=.*|do.devicecheck=1|' anykernel.sh
           sed -i 's|device.name1=.*|device.name1=sagit|' anykernel.sh
           sed -i '/device.name2=/d' anykernel.sh
@@ -80,12 +81,12 @@ jobs:
           sed -i 's|BLOCK=.*|BLOCK=boot;|' anykernel.sh
           sed -i 's|IS_SLOT_DEVICE=.*|IS_SLOT_DEVICE=0;|' anykernel.sh
 
-          zip -r9 ../Mi6-KSU-Droidspaces-Kernel.zip . -x ".git*" "README.md" "*placeholder"
+          zip -r9 ../Mi6-Droidspaces-Kernel.zip . -x ".git*" "README.md" "*placeholder"
 
       - name: Upload flashable zip
         uses: actions/upload-artifact@v4
         with:
-          name: Mi6-KSU-Droidspaces-Kernel-ZIP
+          name: Mi6-Droidspaces-Kernel-ZIP
           path: |
-            Mi6-KSU-Droidspaces-Kernel.zip
+            Mi6-Droidspaces-Kernel.zip
             out/.config
